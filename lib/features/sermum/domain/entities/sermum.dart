@@ -1,20 +1,20 @@
 class Sermum {
   int _idSermum;
-  String titre;
-  String description;
+  String _titre;
+  String _description;
   String? imageUrl;
 
   Sermum({required int idSermum, required String titre, required String description, this.imageUrl})
       : _idSermum = idSermum,
-        titre = titre,
-        description = description;
+        _titre = titre,
+        _description = description;
 
   String getTitre() {
-    return titre;
+    return _titre;
   }
 
   String getDescription() {
-    return description;
+    return _description;
   }
 
   String? getImageUrl() {
@@ -28,11 +28,11 @@ class Sermum {
   }
 
   void setTitre(String value) {
-    titre = value;
+    _titre = value;
   }
 
   void setDescription(String value) {
-    description = value;
+    _description = value;
   }
   void setImageUrl(String? value) {
     if (value != null && value.isEmpty) {
