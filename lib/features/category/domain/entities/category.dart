@@ -1,44 +1,26 @@
 class Category {
-  String _id;
-  String _name;
-  String _description;
-  String? imageUrl;
-  
+  final String id;
+  final String name;
+  final int? colorValue; // ex. 0xFF2196F3
+  final DateTime createdAt;
 
-  Category({
-    required String id,
-    required String name,
-    required String description,
-    this.imageUrl,
-  })  : _id = id,
-        _name = name,
-        _description = description;
+  const Category({
+    required this.id,
+    required this.name,
+    required this.createdAt,
+    this.colorValue,
+  });
 
-  String get getId {
-    return _id;
-  }
-  String get getName {
-    return _name;
-  }
-  String get getDescription {
-    return _description;
-  }
-  String? get getImageUrl {
-    return imageUrl;
-  }
-  void setImageUrl(String? value) {
-    if (value != null && value.isEmpty) {
-      imageUrl = null;
-      return;
-    } 
-    imageUrl = value;
-  }
-  void setName(String value) {
-    _name = value;
-  }
-  void setDescription(String value) {
-    _description = value;
-  }
+  Category copyWith({String? name, int? colorValue}) => Category(
+        id: id,
+        name: name ?? this.name,
+        colorValue: colorValue ?? this.colorValue,
+        createdAt: createdAt,
+      );
 
+  @override
+  bool operator ==(Object other) => other is Category && other.id == id;
 
+  @override
+  int get hashCode => id.hashCode;
 }
