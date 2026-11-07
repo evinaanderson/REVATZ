@@ -1,7 +1,7 @@
 import '../../../../core/errors/failures.dart';
 import '../../../../core/result/result.dart';
 import '../../../../core/usecases/usecase.dart';
-import '../../../sermum/domain/repositories/sermon_repository.dart';
+import '../../../sermon/domain/repositories/sermon_repository.dart';
 import '../repositories/category_repository.dart';
 
 /// Refuse la suppression si la catégorie contient encore des sermons.

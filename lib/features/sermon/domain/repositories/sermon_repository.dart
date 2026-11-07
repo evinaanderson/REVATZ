@@ -1,6 +1,6 @@
 
 import '../../../../core/result/result.dart';
-import 'package:cermum/features/sermum/domain/entities/sermon.dart';
+import 'package:cermum/features/sermon/domain/entities/sermon.dart';
 
 abstract class SermonRepository {
   Future<Result<Sermon>> add(Sermon sermon);

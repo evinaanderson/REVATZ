@@ -1,8 +1,8 @@
 import '../../../../core/result/result.dart';
 import '../../../../core/usecases/usecase.dart';
 import '../../../category/domain/repositories/category_repository.dart';
-import '../../../sermum/domain/entities/sermon.dart';
-import '../../../sermum/domain/repositories/sermon_repository.dart';
+import '../../../sermon/domain/entities/sermon.dart';
+import '../../../sermon/domain/repositories/sermon_repository.dart';
 import '../entities/backup_data.dart';
 import '../entities/backup_info.dart';
 import '../repositories/backup_repository.dart';

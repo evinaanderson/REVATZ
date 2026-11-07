@@ -1,5 +1,5 @@
 import '../../../category/domain/entities/category.dart';
-import '../../../sermum/domain/entities/sermon.dart';
+import '../../../sermon/domain/entities/sermon.dart';
 
 /// Contenu complet d'une sauvegarde.
 class BackupData {
