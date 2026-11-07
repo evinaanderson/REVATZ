@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/presentation/widgets/async_value_view.dart';
 import '../../../../core/presentation/widgets/empty_state.dart';
+import '../../../../core/theme/app_theme.dart';
 import '../../../category/presentation/state/category_providers.dart';
 import '../../domain/entities/sermon.dart';
 import '../state/sermon_providers.dart';
@@ -49,14 +50,26 @@ class _SermonListPageState extends ConsumerState<SermonListPage> {
             ? TextField(
                 controller: _searchCtrl,
                 autofocus: true,
+                style: const TextStyle(color: AppColors.white),
+                cursorColor: AppColors.gold,
                 decoration: const InputDecoration(
                   hintText: 'Rechercher un sermon…',
+                  hintStyle: TextStyle(color: Colors.white60),
                   border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
                 ),
                 onChanged: (v) =>
                     ref.read(sermonSearchQueryProvider.notifier).state = v,
               )
-            : const Text('Mes sermons'),
+            : const Text(
+                'REVATZ',
+                style: TextStyle(
+                  color: AppColors.gold,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 3,
+                ),
+              ),
         actions: [
           IconButton(
             tooltip: _searching ? 'Fermer la recherche' : 'Rechercher',

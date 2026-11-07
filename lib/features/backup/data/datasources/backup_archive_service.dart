@@ -8,95 +8,57 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../../category/data/models/category_model.dart';
 import '../../../sermon/data/models/sermon_model.dart';
-import '../../../sermon/domain/entities/sermon.dart';
 import '../../../sermon/domain/entities/reference_photo.dart';
+import '../../../sermon/domain/entities/sermon.dart';
 import '../../domain/entities/backup_data.dart';
 
-/// Construit et lit les archives ZIP :
-///  1. archive de sauvegarde (Drive) : `data.json` + `photos/`
-///  2. export lisible (local) : un dossier par catégorie
+/// Construit et lit les archives ZIP de REVATZ.
+///
+/// Deux formats, mêmes données (`sermon.json`) :
+///  1. Sauvegarde (local + Drive) : `sermon.json` + `photos/<id>.<ext>`
+///  2. Export lisible : `<Catégorie>/<Titre>.txt` (+ photo) + `sermon.json`
+///
+/// Dans `sermon.json`, le chemin de la photo est RELATIF à la racine du ZIP,
+/// ce qui permet la restauration sur un autre téléphone.
 class BackupArchiveService {
-  static const _jsonName = 'data.json';
+  static const jsonName = 'sermon.json';
+  static const _legacyJsonName = 'data.json'; // anciennes sauvegardes Drive
   static const _photosDir = 'photos';
   static const _noCategory = 'Sans catégorie';
+  static const formatVersion = 2;
 
-  // ---------------------------------------------------------------- Drive
+  // ------------------------------------------------------ Sauvegarde (ZIP)
   Future<List<int>> buildBackupBytes(BackupData data) async {
     final archive = Archive();
     final sermonsJson = <Map<String, dynamic>>[];
 
     for (final s in data.sermons) {
-      final kept = <ReferencePhoto>[];
-      for (final photo in s.photos) {
+      ReferencePhoto? kept;
+      final photo = s.photo;
+      if (photo != null) {
         final file = File(photo.path);
-        if (!await file.exists()) continue;
-        final entry = '$_photosDir/${photo.id}${p.extension(photo.path)}';
-        final bytes = await file.readAsBytes();
-        archive.addFile(ArchiveFile(entry, bytes.length, bytes));
-        kept.add(photo.copyWith(path: entry)); // chemin relatif dans l'archive
+        if (await file.exists()) {
+          final entry = '$_photosDir/${photo.id}${p.extension(photo.path)}';
+          final bytes = await file.readAsBytes();
+          archive.addFile(ArchiveFile(entry, bytes.length, bytes));
+          kept = photo.copyWith(path: entry);
+        }
       }
-      sermonsJson.add(SermonModel.fromEntity(s.copyWith(photos: kept)).toJson());
+      sermonsJson.add(
+          SermonModel.fromEntity(s.copyWith(photo: kept, clearPhoto: kept == null))
+              .toJson());
     }
 
-    final json = utf8.encode(jsonEncode({
-      'version': 1,
-      'createdAt': data.createdAt.toIso8601String(),
-      'categories':
-          data.categories.map((c) => CategoryModel.fromEntity(c).toJson()).toList(),
-      'sermons': sermonsJson,
-    }));
-    archive.addFile(ArchiveFile(_jsonName, json.length, json));
-
-    final out = ZipEncoder().encode(archive);
-    if (out == null) throw const FileSystemException('Création du ZIP impossible');
-    return out;
+    _addJson(archive, data, sermonsJson);
+    return _encode(archive);
   }
 
-  Future<BackupData> parseBackupBytes(List<int> bytes) async {
-    final archive = ZipDecoder().decodeBytes(bytes);
-    final jsonFile = archive.findFile(_jsonName);
-    if (jsonFile == null) throw const FormatException('data.json manquant');
-
-    final map =
-        jsonDecode(utf8.decode(jsonFile.content as List<int>)) as Map<String, dynamic>;
-
-    // Photos extraites dans le dossier de l'app (basename uniquement : sécurité).
-    final photosDir = await _photosDirectory();
-    for (final f in archive) {
-      if (f.isFile && f.name.startsWith('$_photosDir/')) {
-        final target = File(p.join(photosDir.path, p.basename(f.name)));
-        await target.writeAsBytes(f.content as List<int>, flush: true);
-      }
-    }
-
-    final categories = (map['categories'] as List)
-        .map((j) => CategoryModel.fromJson(j as Map<String, dynamic>))
-        .toList();
-
-    final sermons = (map['sermons'] as List)
-        .map((j) => SermonModel.fromJson(j as Map<String, dynamic>))
-        .map<Sermon>((s) => s.copyWith(
-              syncStatus: SyncStatus.synced,
-              photos: s.photos
-                  .map((ph) =>
-                      ph.copyWith(path: p.join(photosDir.path, p.basename(ph.path))))
-                  .toList(),
-            ))
-        .toList();
-
-    return BackupData(
-      categories: categories,
-      sermons: sermons,
-      createdAt: DateTime.tryParse(map['createdAt'] as String? ?? '') ?? DateTime.now(),
-    );
-  }
-
-  // ----------------------------------------------------------- Export local
-  /// ZIP lisible : `Catégorie/Titre.txt` + `Catégorie/Titre_photos/1.jpg`.
-  Future<String> buildExportZip(BackupData data) async {
+  // --------------------------------------------------------- Export lisible
+  Future<List<int>> buildExportBytes(BackupData data) async {
     final archive = Archive();
     final names = {for (final c in data.categories) c.id: _safe(c.name)};
     final used = <String>{};
+    final sermonsJson = <Map<String, dynamic>>[];
 
     for (final s in data.sermons) {
       final folder = names[s.categoryId] ?? _noCategory;
@@ -109,30 +71,94 @@ class BackupArchiveService {
       final text = utf8.encode(_render(s, folder));
       archive.addFile(ArchiveFile('$folder/$base.txt', text.length, text));
 
-      var i = 1;
-      for (final photo in s.photos) {
+      ReferencePhoto? kept;
+      final photo = s.photo;
+      if (photo != null) {
         final file = File(photo.path);
-        if (!await file.exists()) continue;
-        final bytes = await file.readAsBytes();
-        archive.addFile(ArchiveFile(
-            '$folder/${base}_photos/$i${p.extension(photo.path)}',
-            bytes.length,
-            bytes));
-        i++;
+        if (await file.exists()) {
+          final entry = '$folder/$base${p.extension(photo.path)}';
+          final bytes = await file.readAsBytes();
+          archive.addFile(ArchiveFile(entry, bytes.length, bytes));
+          kept = photo.copyWith(path: entry); // chemin de la photo dans le ZIP
+        }
       }
+      sermonsJson.add(
+          SermonModel.fromEntity(s.copyWith(photo: kept, clearPhoto: kept == null))
+              .toJson());
     }
 
-    final out = ZipEncoder().encode(archive);
-    if (out == null) throw const FileSystemException('Création du ZIP impossible');
+    _addJson(archive, data, sermonsJson);
+    return _encode(archive);
+  }
 
-    final dir = Directory(p.join((await getApplicationDocumentsDirectory()).path, 'exports'));
-    await dir.create(recursive: true);
-    final file = File(p.join(dir.path, 'sermons_${_stamp(DateTime.now())}.zip'));
-    await file.writeAsBytes(out, flush: true);
-    return file.path;
+  // ------------------------------------------------------------ Restauration
+  /// Lit `sermon.json`, extrait les photos dans le dossier de l'app et
+  /// remplace leurs chemins par les chemins locaux.
+  Future<BackupData> parseBackupBytes(
+    List<int> bytes, {
+    required SyncStatus status,
+  }) async {
+    final archive = ZipDecoder().decodeBytes(bytes);
+    final jsonFile =
+        archive.findFile(jsonName) ?? archive.findFile(_legacyJsonName);
+    if (jsonFile == null) {
+      throw const FormatException('sermon.json introuvable dans le ZIP');
+    }
+
+    final map =
+        jsonDecode(utf8.decode(jsonFile.content as List<int>)) as Map<String, dynamic>;
+    final photosDir = await _photosDirectory();
+
+    final categories = ((map['categories'] as List?) ?? const [])
+        .map((j) => CategoryModel.fromJson(j as Map<String, dynamic>))
+        .toList();
+
+    final sermons = <Sermon>[];
+    for (final j in (map['sermons'] as List? ?? const [])) {
+      Sermon s = SermonModel.fromJson(j as Map<String, dynamic>);
+      final photo = s.photo;
+      if (photo != null) {
+        final entry = archive.findFile(photo.path.replaceAll('\\', '/'));
+        if (entry != null && entry.isFile) {
+          final target =
+              p.join(photosDir.path, '${photo.id}${p.extension(photo.path)}');
+          await File(target).writeAsBytes(entry.content as List<int>, flush: true);
+          s = s.copyWith(photo: photo.copyWith(path: target));
+        } else {
+          s = s.copyWith(clearPhoto: true); // photo absente du ZIP
+        }
+      }
+      sermons.add(s.copyWith(syncStatus: status));
+    }
+
+    return BackupData(
+      categories: categories,
+      sermons: sermons,
+      createdAt:
+          DateTime.tryParse(map['exportedAt'] as String? ?? map['createdAt'] as String? ?? '') ??
+              DateTime.now(),
+    );
   }
 
   // --------------------------------------------------------------- Helpers
+  void _addJson(Archive archive, BackupData data, List<Map<String, dynamic>> sermons) {
+    final json = utf8.encode(const JsonEncoder.withIndent('  ').convert({
+      'app': 'REVATZ',
+      'version': formatVersion,
+      'exportedAt': data.createdAt.toIso8601String(),
+      'categories':
+          data.categories.map((c) => CategoryModel.fromEntity(c).toJson()).toList(),
+      'sermons': sermons,
+    }));
+    archive.addFile(ArchiveFile(jsonName, json.length, json));
+  }
+
+  List<int> _encode(Archive archive) {
+    final out = ZipEncoder().encode(archive);
+    if (out == null) throw const FileSystemException('Création du ZIP impossible');
+    return out;
+  }
+
   Future<Directory> _photosDirectory() async {
     final dir = Directory(
         p.join((await getApplicationDocumentsDirectory()).path, 'sermon_photos'));
@@ -147,9 +173,6 @@ class BackupArchiveService {
 
   String _date(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-
-  String _stamp(DateTime d) =>
-      '${_date(d).replaceAll('-', '')}_${d.hour.toString().padLeft(2, '0')}${d.minute.toString().padLeft(2, '0')}';
 
   String _render(Sermon s, String category) {
     final b = StringBuffer()

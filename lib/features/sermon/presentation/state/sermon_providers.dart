@@ -6,6 +6,7 @@ import '../../../../core/utils/id_generator.dart';
 import '../../../../injection_container.dart';
 import '../../domain/entities/sermon.dart';
 import '../../domain/usecases/add_sermon.dart';
+import '../../domain/usecases/build_sermon_share.dart';
 import '../../domain/usecases/delete_sermon.dart';
 import '../../domain/usecases/get_sermons.dart';
 import '../../domain/usecases/update_sermon.dart';
@@ -45,19 +46,33 @@ final sermonByIdProvider = Provider.family<Sermon?, String>((ref, id) {
   return null;
 });
 
+final photoStorageProvider =
+    Provider<PhotoStorageService>((ref) => PhotoStorageService(sl<IdGenerator>()));
+
+/// Construit le texte de partage (titre en gras, contenu, versets).
+final buildSermonShareProvider =
+    Provider<BuildSermonShare>((ref) => const BuildSermonShare());
+
 class SermonActions {
   final AddSermon _add;
   final UpdateSermon _update;
   final DeleteSermon _delete;
-  SermonActions(this._add, this._update, this._delete);
+  final PhotoStorageService _photos;
+  SermonActions(this._add, this._update, this._delete, this._photos);
 
   Future<Result<Sermon>> add(AddSermonParams params) => _add(params);
   Future<Result<Sermon>> update(Sermon sermon) => _update(sermon);
-  Future<Result<void>> delete(String id) => _delete(id);
+
+  /// Supprime le sermon puis son fichier photo.
+  Future<Result<void>> delete(Sermon sermon) async {
+    final result = await _delete(sermon.id);
+    final photo = sermon.photo;
+    if (result.isSuccess && photo != null) {
+      await _photos.deleteFile(photo.path);
+    }
+    return result;
+  }
 }
 
-final sermonActionsProvider =
-    Provider<SermonActions>((ref) => SermonActions(sl(), sl(), sl()));
-
-final photoStorageProvider =
-    Provider<PhotoStorageService>((ref) => PhotoStorageService(sl<IdGenerator>()));
+final sermonActionsProvider = Provider<SermonActions>(
+    (ref) => SermonActions(sl(), sl(), sl(), ref.read(photoStorageProvider)));

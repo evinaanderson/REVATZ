@@ -7,6 +7,7 @@ import 'core/utils/uuid_generator.dart';
 import 'features/backup/data/datasources/backup_archive_service.dart';
 import 'features/backup/data/datasources/backup_prefs_datasource.dart';
 import 'features/backup/data/datasources/drive_datasource.dart';
+import 'features/backup/data/datasources/local_backup_storage.dart';
 import 'features/backup/data/repositories/backup_repository_impl.dart';
 import 'features/backup/domain/repositories/backup_repository.dart';
 import 'features/backup/domain/usecases/backup_usecases.dart';
@@ -45,6 +46,7 @@ Future<void> initDependencies() async {
   sl.registerLazySingleton(() => DriveDataSource(sl()));
   sl.registerLazySingleton(() => BackupArchiveService());
   sl.registerLazySingleton(() => BackupPrefsDataSource(sl()));
+  sl.registerLazySingleton(() => LocalBackupStorage());
 
   // --- Repositories (interfaces du Domain)
   sl.registerLazySingleton<SermonRepository>(
@@ -53,7 +55,7 @@ Future<void> initDependencies() async {
       () => CategoryRepositoryImpl(sl<AppDatabase>().categoryDao));
   sl.registerLazySingleton<UserRepository>(() => UserRepositoryImpl(sl()));
   sl.registerLazySingleton<BackupRepository>(
-      () => BackupRepositoryImpl(sl(), sl(), sl()));
+      () => BackupRepositoryImpl(sl(), sl(), sl(), sl()));
 
   // --- Use cases : sermons
   sl.registerFactory(() => AddSermon(sl(), sl()));
@@ -77,9 +79,12 @@ Future<void> initDependencies() async {
   sl.registerFactory(() => SignOut(sl()));
   sl.registerFactory(() => GetCurrentUser(sl()));
 
-  // --- Use cases : sauvegarde
+  // --- Use cases : sauvegarde locale, export, Google Drive
+  sl.registerFactory(() => SaveLocalBackup(sl(), sl(), sl()));
+  sl.registerFactory(() => RestoreFromLocalFile(sl(), sl(), sl()));
+  sl.registerFactory(() => ListLocalBackups(sl()));
+  sl.registerFactory(() => ExportToZip(sl(), sl(), sl()));
   sl.registerFactory(() => BackupToDrive(sl(), sl(), sl()));
   sl.registerFactory(() => RestoreFromDrive(sl(), sl(), sl()));
-  sl.registerFactory(() => ExportToZip(sl(), sl(), sl()));
   sl.registerFactory(() => GetBackupInfo(sl()));
 }

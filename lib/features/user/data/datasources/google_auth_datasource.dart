@@ -2,6 +2,8 @@ import 'package:extension_google_sign_in_as_googleapis_auth/extension_google_sig
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:googleapis/drive/v3.dart' as drive;
 
+import '../../../../core/config/google_config.dart';
+
 class AuthRequiredException implements Exception {
   const AuthRequiredException();
 }
@@ -13,7 +15,10 @@ class GoogleAuthDataSource {
 
   GoogleAuthDataSource([GoogleSignIn? googleSignIn])
       : _googleSignIn = googleSignIn ??
-            GoogleSignIn(scopes: [drive.DriveApi.driveFileScope]);
+            GoogleSignIn(
+              scopes: [drive.DriveApi.driveFileScope],
+              serverClientId: kGoogleServerClientId,
+            );
 
   Future<GoogleSignInAccount?> signIn() => _googleSignIn.signIn();
 

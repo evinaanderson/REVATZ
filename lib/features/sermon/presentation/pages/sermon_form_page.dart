@@ -12,7 +12,8 @@ import '../../domain/entities/reference_photo.dart';
 import '../../domain/entities/sermon.dart';
 import '../../domain/usecases/add_sermon.dart';
 import '../state/sermon_providers.dart';
-import '../widgets/photo_thumbnail.dart';
+import '../widgets/photo_thumbnail.dart' show showPhotoViewer;
+import '../widgets/sermon_photo.dart';
 
 class _PassageFields {
   final TextEditingController reference;
@@ -28,6 +29,7 @@ class _PassageFields {
 }
 
 /// Création (sermonId == null) ou modification d'un sermon.
+/// Un sermon a au plus UNE photo de référence.
 class SermonFormPage extends ConsumerStatefulWidget {
   final String? sermonId;
   const SermonFormPage({super.key, this.sermonId});
@@ -42,7 +44,8 @@ class _SermonFormPageState extends ConsumerState<SermonFormPage> {
   final _content = TextEditingController();
   final _tags = TextEditingController();
   final List<_PassageFields> _passages = [];
-  List<ReferencePhoto> _photos = [];
+  ReferencePhoto? _photo;
+  ReferencePhoto? _originalPhoto;
   String? _categoryId;
   DateTime? _preachedAt;
   Sermon? _editing;
@@ -61,13 +64,13 @@ class _SermonFormPageState extends ConsumerState<SermonFormPage> {
         _tags.text = s.tags.join(', ');
         _categoryId = s.categoryId;
         _preachedAt = s.preachedAt;
-        _photos = [...s.photos];
+        _photo = s.photo;
+        _originalPhoto = s.photo;
         for (final p in s.passages) {
           _passages.add(_PassageFields(reference: p.reference, text: p.text));
         }
       }
     } else {
-      // Pré-sélectionne la catégorie filtrée dans la liste.
       _categoryId = ref.read(selectedCategoryIdProvider);
     }
   }
@@ -94,7 +97,15 @@ class _SermonFormPageState extends ConsumerState<SermonFormPage> {
     if (picked != null) setState(() => _preachedAt = picked);
   }
 
-  Future<void> _addPhoto() async {
+  /// Supprime le fichier d'une photo ajoutée pendant cette édition
+  /// (jamais la photo d'origine : elle n'est retirée qu'à l'enregistrement).
+  Future<void> _discardIfNew(ReferencePhoto? photo) async {
+    if (photo != null && photo.id != _originalPhoto?.id) {
+      await ref.read(photoStorageProvider).deleteFile(photo.path);
+    }
+  }
+
+  Future<void> _pickPhoto() async {
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
       builder: (ctx) => SafeArea(
@@ -122,10 +133,16 @@ class _SermonFormPageState extends ConsumerState<SermonFormPage> {
           .pickImage(source: source, imageQuality: 85, maxWidth: 2000);
       if (picked == null) return;
       final photo = await ref.read(photoStorageProvider).importPhoto(picked.path);
-      if (mounted) setState(() => _photos = [..._photos, photo]);
+      await _discardIfNew(_photo);
+      if (mounted) setState(() => _photo = photo);
     } catch (_) {
       if (mounted) showMessage(context, 'Impossible d\'ajouter la photo');
     }
+  }
+
+  Future<void> _removePhoto() async {
+    await _discardIfNew(_photo);
+    if (mounted) setState(() => _photo = null);
   }
 
   Future<void> _save() async {
@@ -151,7 +168,7 @@ class _SermonFormPageState extends ConsumerState<SermonFormPage> {
         categoryId: _categoryId ?? '',
         passages: passages,
         content: _content.text,
-        photos: _photos,
+        photo: _photo,
         tags: tags,
         preachedAt: _preachedAt,
       ));
@@ -161,16 +178,25 @@ class _SermonFormPageState extends ConsumerState<SermonFormPage> {
         categoryId: _categoryId,
         passages: passages,
         content: _content.text,
-        photos: _photos,
+        photo: _photo,
+        clearPhoto: _photo == null,
         tags: tags,
         preachedAt: _preachedAt,
+        clearPreachedAt: _preachedAt == null,
       ));
     }
 
     if (!mounted) return;
     setState(() => _saving = false);
     result.when<void>(
-      success: (_) => Navigator.pop(context),
+      success: (_) {
+        // L'ancienne photo remplacée ou retirée n'est plus utile.
+        final original = _originalPhoto;
+        if (original != null && original.id != _photo?.id) {
+          ref.read(photoStorageProvider).deleteFile(original.path);
+        }
+        Navigator.pop(context);
+      },
       failure: (f) => showMessage(context, f.message),
     );
   }
@@ -181,6 +207,7 @@ class _SermonFormPageState extends ConsumerState<SermonFormPage> {
     final categories = ref.watch(categoriesStreamProvider).valueOrNull ?? const [];
     final validCategory =
         categories.any((c) => c.id == _categoryId) ? _categoryId : null;
+    final photo = _photo;
 
     return Scaffold(
       appBar: AppBar(
@@ -190,7 +217,9 @@ class _SermonFormPageState extends ConsumerState<SermonFormPage> {
             onPressed: _saving ? null : _save,
             child: _saving
                 ? const SizedBox(
-                    width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2))
                 : const Text('Enregistrer'),
           ),
         ],
@@ -230,12 +259,95 @@ class _SermonFormPageState extends ConsumerState<SermonFormPage> {
             InkWell(
               onTap: _pickDate,
               child: InputDecorator(
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Date de prédication',
-                  suffixIcon: Icon(Icons.calendar_today_outlined),
+                  suffixIcon: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_preachedAt != null)
+                        IconButton(
+                          tooltip: 'Effacer la date',
+                          icon: const Icon(Icons.clear),
+                          onPressed: () => setState(() => _preachedAt = null),
+                        ),
+                      const Padding(
+                        padding: EdgeInsets.only(right: 12),
+                        child: Icon(Icons.calendar_today_outlined),
+                      ),
+                    ],
+                  ),
                 ),
                 child: Text(
                     _preachedAt == null ? 'Non renseignée' : formatDate(_preachedAt!)),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text('Photo de référence', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 2),
+            Text(
+              'Une seule photo par sermon. Sans photo, l\'image par défaut est utilisée.',
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
+            ),
+            const SizedBox(height: 8),
+            Card(
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                children: [
+                  AspectRatio(
+                    aspectRatio: 16 / 9,
+                    child: GestureDetector(
+                      onTap: photo == null ? null : () => showPhotoViewer(context, photo),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          SermonPhoto(photo: photo, fit: BoxFit.cover),
+                          if (photo == null)
+                            Container(
+                              color: Colors.black38,
+                              alignment: Alignment.center,
+                              child: const Text(
+                                'Photo par défaut',
+                                style: TextStyle(color: Colors.white),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: _pickPhoto,
+                            icon: const Icon(Icons.add_a_photo_outlined),
+                            label: Text(
+                                photo == null ? 'Choisir une photo' : 'Changer la photo'),
+                          ),
+                        ),
+                        if (photo != null)
+                          IconButton(
+                            tooltip: 'Retirer la photo',
+                            onPressed: _removePhoto,
+                            icon: const Icon(Icons.delete_outline),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            TextFormField(
+              controller: _content,
+              minLines: 8,
+              maxLines: null,
+              keyboardType: TextInputType.multiline,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                labelText: 'Contenu du sermon',
+                alignLabelWithHint: true,
               ),
             ),
             const SizedBox(height: 24),
@@ -283,52 +395,11 @@ class _SermonFormPageState extends ConsumerState<SermonFormPage> {
             ),
             const SizedBox(height: 24),
             TextFormField(
-              controller: _content,
-              minLines: 8,
-              maxLines: null,
-              keyboardType: TextInputType.multiline,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: const InputDecoration(
-                labelText: 'Contenu du sermon',
-                alignLabelWithHint: true,
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
               controller: _tags,
               decoration: const InputDecoration(
                 labelText: 'Tags (séparés par des virgules)',
                 hintText: 'grâce, pardon, prière',
               ),
-            ),
-            const SizedBox(height: 24),
-            Text('Photos de référence', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final ph in _photos)
-                  PhotoThumbnail(
-                    photo: ph,
-                    onTap: () => showPhotoViewer(context, ph),
-                    onRemove: () => setState(
-                        () => _photos = _photos.where((x) => x.id != ph.id).toList()),
-                  ),
-                InkWell(
-                  onTap: _addPhoto,
-                  borderRadius: BorderRadius.circular(8),
-                  child: Container(
-                    width: 96,
-                    height: 96,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: theme.colorScheme.outline),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(Icons.add_a_photo_outlined),
-                  ),
-                ),
-              ],
             ),
             const SizedBox(height: 32),
           ],

@@ -12,7 +12,7 @@ class AddSermonParams {
   final String categoryId;
   final List<BiblePassage> passages;
   final String content;
-  final List<ReferencePhoto> photos;
+  final ReferencePhoto? photo;
   final List<String> tags;
   final DateTime? preachedAt;
 
@@ -21,7 +21,7 @@ class AddSermonParams {
     required this.categoryId,
     this.passages = const [],
     this.content = '',
-    this.photos = const [],
+    this.photo,
     this.tags = const [],
     this.preachedAt,
   });
@@ -47,7 +47,7 @@ class AddSermon implements UseCase<Sermon, AddSermonParams> {
       categoryId: p.categoryId,
       passages: p.passages,
       content: p.content,
-      photos: p.photos,
+      photo: p.photo,
       tags: p.tags,
       preachedAt: p.preachedAt,
       createdAt: now,

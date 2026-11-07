@@ -5,8 +5,10 @@ import '../../../../core/usecases/usecase.dart';
 import '../../../../injection_container.dart';
 import '../../domain/entities/backup_data.dart';
 import '../../domain/entities/backup_info.dart';
+import '../../domain/entities/local_backup_file.dart';
 import '../../domain/usecases/backup_usecases.dart';
 
+/// État de la sauvegarde Google Drive.
 /// Après une sauvegarde : `ref.invalidate(backupInfoProvider)`.
 final backupInfoProvider = FutureProvider.autoDispose<BackupInfo>((ref) async {
   final result = await sl<GetBackupInfo>()(const NoParams());
@@ -14,15 +16,26 @@ final backupInfoProvider = FutureProvider.autoDispose<BackupInfo>((ref) async {
 });
 
 class BackupActions {
-  final BackupToDrive _backup;
-  final RestoreFromDrive _restore;
+  final SaveLocalBackup _saveLocal;
+  final RestoreFromLocalFile _restoreLocal;
+  final ListLocalBackups _listLocal;
   final ExportToZip _export;
-  BackupActions(this._backup, this._restore, this._export);
+  final BackupToDrive _backupDrive;
+  final RestoreFromDrive _restoreDrive;
 
-  Future<Result<BackupInfo>> backup() => _backup(const NoParams());
-  Future<Result<BackupData>> restore() => _restore(const NoParams());
+  BackupActions(this._saveLocal, this._restoreLocal, this._listLocal,
+      this._export, this._backupDrive, this._restoreDrive);
+
+  // Local
+  Future<Result<String>> saveLocal() => _saveLocal(const NoParams());
+  Future<Result<BackupData>> restoreLocal(String zipPath) => _restoreLocal(zipPath);
+  Future<Result<List<LocalBackupFile>>> listLocal() => _listLocal(const NoParams());
   Future<Result<String>> exportZip() => _export(const NoParams());
+
+  // Google Drive
+  Future<Result<BackupInfo>> backupToDrive() => _backupDrive(const NoParams());
+  Future<Result<BackupData>> restoreFromDrive() => _restoreDrive(const NoParams());
 }
 
-final backupActionsProvider =
-    Provider<BackupActions>((ref) => BackupActions(sl(), sl(), sl()));
+final backupActionsProvider = Provider<BackupActions>(
+    (ref) => BackupActions(sl(), sl(), sl(), sl(), sl(), sl()));

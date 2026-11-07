@@ -1,6 +1,6 @@
-import 'package:flutter/services.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
+import '../../../../core/errors/google_error_message.dart';
 import '../../../../core/errors/failures.dart';
 import '../../../../core/result/result.dart';
 import '../../domain/entities/user.dart';
@@ -19,14 +19,6 @@ class UserRepositoryImpl implements UserRepository {
         createdAt: DateTime.now(),
       );
 
-  Failure _map(Object e) {
-    if (e is PlatformException) {
-      if (e.code == 'network_error') return const NetworkFailure();
-      return AuthFailure(e.message ?? 'Connexion Google impossible');
-    }
-    return UnknownFailure(e.toString());
-  }
-
   @override
   Future<Result<User>> signInWithGoogle() async {
     try {
@@ -34,7 +26,7 @@ class UserRepositoryImpl implements UserRepository {
       if (account == null) return const Err(AuthFailure('Connexion annulée'));
       return Success(_toUser(account));
     } catch (e) {
-      return Err(_map(e));
+      return Err(mapGoogleSignInError(e));
     }
   }
 
@@ -44,7 +36,7 @@ class UserRepositoryImpl implements UserRepository {
       await _auth.signOut();
       return const Success(null);
     } catch (e) {
-      return Err(_map(e));
+      return Err(mapGoogleSignInError(e));
     }
   }
 
@@ -54,7 +46,7 @@ class UserRepositoryImpl implements UserRepository {
       final account = await _auth.currentAccount();
       return Success(account == null ? null : _toUser(account));
     } catch (e) {
-      return Err(_map(e));
+      return Err(mapGoogleSignInError(e));
     }
   }
 }

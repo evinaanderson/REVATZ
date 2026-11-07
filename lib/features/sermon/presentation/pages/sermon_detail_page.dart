@@ -1,44 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../../core/presentation/widgets/dialogs.dart';
 import '../../../../core/presentation/widgets/empty_state.dart';
+import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/format.dart';
 import '../../../category/presentation/state/category_providers.dart';
 import '../state/sermon_providers.dart';
-import '../widgets/photo_thumbnail.dart';
-import 'sermon_form_page.dart';
+import '../widgets/photo_thumbnail.dart' show showPhotoViewer;
+import '../widgets/sermon_menu_actions.dart';
+import '../widgets/sermon_photo.dart';
 
 class SermonDetailPage extends ConsumerWidget {
   final String sermonId;
   const SermonDetailPage({super.key, required this.sermonId});
-
-  Future<void> _delete(BuildContext context, WidgetRef ref) async {
-    final sermon = ref.read(sermonByIdProvider(sermonId));
-    if (sermon == null) return;
-    final ok = await confirmDialog(
-      context,
-      title: 'Supprimer ce sermon ?',
-      message: '« ${sermon.title} » sera supprimé définitivement.',
-      confirmLabel: 'Supprimer',
-      destructive: true,
-    );
-    if (!ok) return;
-
-    final result = await ref.read(sermonActionsProvider).delete(sermonId);
-    if (!context.mounted) return;
-    result.when<void>(
-      success: (_) {
-        final storage = ref.read(photoStorageProvider);
-        for (final p in sermon.photos) {
-          storage.deleteFile(p.path);
-        }
-        Navigator.pop(context);
-        showMessage(context, 'Sermon supprimé');
-      },
-      failure: (f) => showMessage(context, f.message),
-    );
-  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -56,30 +30,47 @@ class SermonDetailPage extends ConsumerWidget {
     final color = category?.colorValue != null
         ? Color(category!.colorValue!)
         : theme.colorScheme.primary;
+    final photo = sermon.photo;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Sermon'),
         actions: [
           IconButton(
+            tooltip: 'Partager',
+            icon: const Icon(Icons.share_outlined),
+            onPressed: () => shareSermon(context, ref, sermon),
+          ),
+          IconButton(
             tooltip: 'Modifier',
             icon: const Icon(Icons.edit_outlined),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => SermonFormPage(sermonId: sermonId)),
-            ),
+            onPressed: () => openSermonEditor(context, sermonId),
           ),
           IconButton(
             tooltip: 'Supprimer',
             icon: const Icon(Icons.delete_outline),
-            onPressed: () => _delete(context, ref),
+            onPressed: () =>
+                deleteSermonWithConfirm(context, ref, sermon, closePageAfter: true),
           ),
         ],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text(sermon.title, style: theme.textTheme.headlineSmall),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: AspectRatio(
+              aspectRatio: 16 / 9,
+              child: InkWell(
+                onTap: photo == null ? null : () => showPhotoViewer(context, photo),
+                child: SermonPhoto(photo: photo, fit: BoxFit.cover),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(sermon.title,
+              style: theme.textTheme.headlineSmall
+                  ?.copyWith(fontWeight: FontWeight.w800)),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -95,8 +86,12 @@ class SermonDetailPage extends ConsumerWidget {
                     style: theme.textTheme.bodyMedium),
             ],
           ),
-          if (sermon.passages.isNotEmpty) ...[
+          if (sermon.content.isNotEmpty) ...[
             const SizedBox(height: 16),
+            SelectableText(sermon.content, style: theme.textTheme.bodyLarge),
+          ],
+          if (sermon.passages.isNotEmpty) ...[
+            const SizedBox(height: 20),
             Text('Textes bibliques', style: theme.textTheme.titleMedium),
             const SizedBox(height: 4),
             for (final p in sermon.passages)
@@ -107,11 +102,11 @@ class SermonDetailPage extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(p.reference,
-                          style: theme.textTheme.titleSmall
-                              ?.copyWith(fontWeight: FontWeight.bold)),
+                          style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.bold, color: AppColors.gold)),
                       if (p.text.isNotEmpty) ...[
                         const SizedBox(height: 4),
-                        Text(p.text,
+                        Text('« ${p.text} »',
                             style: theme.textTheme.bodyMedium
                                 ?.copyWith(fontStyle: FontStyle.italic)),
                       ],
@@ -119,26 +114,6 @@ class SermonDetailPage extends ConsumerWidget {
                   ),
                 ),
               ),
-          ],
-          if (sermon.content.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            Text('Contenu', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 4),
-            SelectableText(sermon.content, style: theme.textTheme.bodyLarge),
-          ],
-          if (sermon.photos.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            Text('Photos de référence', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final ph in sermon.photos)
-                  PhotoThumbnail(
-                      photo: ph, onTap: () => showPhotoViewer(context, ph)),
-              ],
-            ),
           ],
           if (sermon.tags.isNotEmpty) ...[
             const SizedBox(height: 16),
