@@ -83,6 +83,7 @@ Future<void> initDependencies() async {
   sl.registerFactory(() => SaveLocalBackup(sl(), sl(), sl()));
   sl.registerFactory(() => RestoreFromLocalFile(sl(), sl(), sl()));
   sl.registerFactory(() => ListLocalBackups(sl()));
+  sl.registerFactory(() => GetStorageLocation(sl()));
   sl.registerFactory(() => ExportToZip(sl(), sl(), sl()));
   sl.registerFactory(() => BackupToDrive(sl(), sl(), sl()));
   sl.registerFactory(() => RestoreFromDrive(sl(), sl(), sl()));

@@ -10,6 +10,7 @@ import '../../../sermon/domain/entities/sermon.dart';
 import '../../../sermon/presentation/state/sermon_providers.dart';
 import '../../domain/entities/backup_info.dart';
 import '../../domain/entities/local_backup_file.dart';
+import '../../domain/entities/storage_location.dart';
 import '../state/backup_providers.dart';
 
 class BackupPage extends ConsumerStatefulWidget {
@@ -19,16 +20,101 @@ class BackupPage extends ConsumerStatefulWidget {
   ConsumerState<BackupPage> createState() => _BackupPageState();
 }
 
-class _BackupPageState extends ConsumerState<BackupPage> {
+class _BackupPageState extends ConsumerState<BackupPage> with WidgetsBindingObserver {
   String? _busyLabel;
   bool get _busy => _busyLabel != null;
+  StorageLocation? _location;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _loadLocation();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Au retour des réglages Android, on relit l'état de l'autorisation.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _loadLocation();
+  }
+
+  Future<void> _loadLocation({bool requestAccess = false}) async {
+    final result = await ref
+        .read(backupActionsProvider)
+        .storageLocation(requestAccess: requestAccess);
+    if (!mounted) return;
+    setState(() => _location = result.valueOrNull);
+  }
+
+  Future<void> _requestAccess() => _run(
+        'Vérification de l\'accès aux fichiers…',
+        () => _loadLocation(requestAccess: true),
+      );
+
+  Widget _locationCard(ThemeData theme) {
+    final loc = _location;
+    if (loc == null) return const SizedBox.shrink();
+    final pretty = loc.path.replaceFirst('/storage/emulated/', '');
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  loc.isPublic ? Icons.check_circle_outline : Icons.warning_amber_rounded,
+                  color: loc.isPublic ? AppColors.gold : theme.colorScheme.error,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    loc.isPublic
+                        ? 'Dossier de sauvegarde'
+                        : 'Dossier privé (accès aux fichiers non autorisé)',
+                    style: theme.textTheme.titleSmall,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            SelectableText('$pretty/', style: theme.textTheme.bodySmall),
+            if (!loc.isPublic) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Pour enregistrer dans 0/REVATZ (ou 0/Download/REVATZ), autorisez '
+                '« Accès à tous les fichiers » pour REVATZ.',
+                style: theme.textTheme.bodySmall,
+              ),
+              const SizedBox(height: 8),
+              FilledButton.tonalIcon(
+                onPressed: _busy ? null : _requestAccess,
+                icon: const Icon(Icons.folder_open),
+                label: const Text('Autoriser l\'accès aux fichiers'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 
   Future<void> _run(String label, Future<void> Function() task) async {
     setState(() => _busyLabel = label);
     try {
       await task();
     } finally {
-      if (mounted) setState(() => _busyLabel = null);
+      if (mounted) {
+        setState(() => _busyLabel = null);
+        _loadLocation();
+      }
     }
   }
 
@@ -49,7 +135,10 @@ class _BackupPageState extends ConsumerState<BackupPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(title),
-        content: Text('Fichier enregistré :\n$path'),
+        content: Text(
+          'Fichier enregistré :\n$path'
+          '${path.contains('/Android/data/') ? '\n\nAttention : ce dossier est privé à l\'application (il est supprimé à la désinstallation). Autorisez l\'accès aux fichiers pour enregistrer dans 0/REVATZ.' : ''}',
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Fermer')),
           FilledButton.icon(
@@ -88,13 +177,90 @@ class _BackupPageState extends ConsumerState<BackupPage> {
         await _showCreated('Export créé', path);
       });
 
-  Future<void> _restoreFromFile() async {
-    final picked = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const ['zip'],
+  static const _browseKey = '__browse__';
+
+  /// Liste les sauvegardes du dossier REVATZ et retourne le chemin choisi,
+  /// ou [_browseKey] pour parcourir les fichiers du téléphone.
+  Future<String?> _chooseBackup({
+    required String title,
+    required bool allowBrowse,
+  }) async {
+    final result = await ref.read(backupActionsProvider).listLocal();
+    if (!mounted) return null;
+    final files = result.valueOrNull ?? const <LocalBackupFile>[];
+    if (files.isEmpty && !allowBrowse) {
+      showMessage(
+        context,
+        result.failureOrNull?.message ??
+            'Aucune sauvegarde trouvée. Créez-en une d\'abord.',
+      );
+      return null;
+    }
+
+    return showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.6),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(title,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                ),
+              ),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: files.length + (allowBrowse ? 1 : 0),
+                  itemBuilder: (_, i) {
+                    if (i == files.length) {
+                      return ListTile(
+                        leading: const Icon(Icons.folder_open),
+                        title: const Text('Parcourir les fichiers…'),
+                        subtitle: const Text('Téléchargements, WhatsApp, Drive…'),
+                        onTap: () => Navigator.pop(ctx, _browseKey),
+                      );
+                    }
+                    final f = files[i];
+                    return ListTile(
+                      leading: const Icon(Icons.folder_zip_outlined),
+                      title: Text(f.name),
+                      subtitle:
+                          Text('${formatDateTime(f.modifiedAt)} · ${_size(f.sizeBytes)}'),
+                      onTap: () => Navigator.pop(ctx, f.path),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
-    final path = picked?.files.single.path;
+  }
+
+  Future<void> _restoreFromFile() async {
+    var path = await _chooseBackup(
+      title: 'Restaurer quelle sauvegarde ?',
+      allowBrowse: true,
+    );
     if (path == null || !mounted) return;
+
+    if (path == _browseKey) {
+      final picked = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['zip'],
+      );
+      path = picked?.files.single.path;
+      if (path == null || !mounted) return;
+    }
+    final chosen = path;
 
     final ok = await confirmDialog(
       context,
@@ -107,7 +273,7 @@ class _BackupPageState extends ConsumerState<BackupPage> {
     if (!ok || !mounted) return;
 
     await _run('Restauration en cours…', () async {
-      final result = await ref.read(backupActionsProvider).restoreLocal(path);
+      final result = await ref.read(backupActionsProvider).restoreLocal(chosen);
       if (!mounted) return;
       showMessage(
         context,
@@ -121,60 +287,11 @@ class _BackupPageState extends ConsumerState<BackupPage> {
   }
 
   Future<void> _shareBackup() async {
-    final result = await ref.read(backupActionsProvider).listLocal();
-    if (!mounted) return;
-    final files = result.valueOrNull ?? const <LocalBackupFile>[];
-    if (files.isEmpty) {
-      showMessage(
-        context,
-        result.failureOrNull?.message ??
-            'Aucune sauvegarde trouvée. Créez-en une d\'abord.',
-      );
-      return;
-    }
-
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.6),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text('Partager quelle sauvegarde ?',
-                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                ),
-              ),
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: files.length,
-                  itemBuilder: (_, i) {
-                    final f = files[i];
-                    return ListTile(
-                      leading: const Icon(Icons.folder_zip_outlined),
-                      title: Text(f.name),
-                      subtitle:
-                          Text('${formatDateTime(f.modifiedAt)} · ${_size(f.sizeBytes)}'),
-                      trailing: const Icon(Icons.share_outlined),
-                      onTap: () {
-                        Navigator.pop(ctx);
-                        _shareFile(f.path);
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+    final path = await _chooseBackup(
+      title: 'Partager quelle sauvegarde ?',
+      allowBrowse: false,
     );
+    if (path != null) await _shareFile(path);
   }
 
   String _size(int bytes) {
@@ -253,10 +370,12 @@ class _BackupPageState extends ConsumerState<BackupPage> {
           // ---------- Local ----------
           _section(theme, Icons.sd_storage_outlined, 'Sauvegarde sur le téléphone'),
           Text(
-            'Les fichiers sont enregistrés dans le dossier REVATZ '
-            '(0/REVATZ/Sermon_[date].zip) : un fichier sermon.json et les photos.',
+            'Les fichiers sont enregistrés dans 0/REVATZ/ (ou 0/Download/REVATZ/) : '
+            'Sermon_[date].zip contient un fichier sermon.json et les photos.',
             style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
           ),
+          const SizedBox(height: 12),
+          _locationCard(theme),
           const SizedBox(height: 12),
           FilledButton.icon(
             onPressed: _busy ? null : _saveLocal,

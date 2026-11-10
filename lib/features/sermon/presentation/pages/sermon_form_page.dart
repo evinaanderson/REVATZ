@@ -10,10 +10,12 @@ import '../../../category/presentation/widgets/category_dialog.dart';
 import '../../domain/entities/bible_passage.dart';
 import '../../domain/entities/reference_photo.dart';
 import '../../domain/entities/sermon.dart';
+import '../../domain/services/rich_content.dart';
 import '../../domain/usecases/add_sermon.dart';
 import '../state/sermon_providers.dart';
 import '../widgets/photo_thumbnail.dart' show showPhotoViewer;
 import '../widgets/sermon_photo.dart';
+import 'content_editor_page.dart';
 
 class _PassageFields {
   final TextEditingController reference;
@@ -41,7 +43,7 @@ class SermonFormPage extends ConsumerStatefulWidget {
 class _SermonFormPageState extends ConsumerState<SermonFormPage> {
   final _formKey = GlobalKey<FormState>();
   final _title = TextEditingController();
-  final _content = TextEditingController();
+  String _content = '';
   final _tags = TextEditingController();
   final List<_PassageFields> _passages = [];
   ReferencePhoto? _photo;
@@ -60,7 +62,7 @@ class _SermonFormPageState extends ConsumerState<SermonFormPage> {
       if (s != null) {
         _editing = s;
         _title.text = s.title;
-        _content.text = s.content;
+        _content = s.content;
         _tags.text = s.tags.join(', ');
         _categoryId = s.categoryId;
         _preachedAt = s.preachedAt;
@@ -78,7 +80,6 @@ class _SermonFormPageState extends ConsumerState<SermonFormPage> {
   @override
   void dispose() {
     _title.dispose();
-    _content.dispose();
     _tags.dispose();
     for (final p in _passages) {
       p.dispose();
@@ -145,6 +146,21 @@ class _SermonFormPageState extends ConsumerState<SermonFormPage> {
     if (mounted) setState(() => _photo = null);
   }
 
+  String _contentPreview() {
+    if (RichContent.isBlank(_content)) return 'Touchez pour écrire le contenu…';
+    return RichContent.toPlainText(_content);
+  }
+
+  Future<void> _editContent() async {
+    final result = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ContentEditorPage(initialContent: _content),
+      ),
+    );
+    if (result != null && mounted) setState(() => _content = result);
+  }
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
@@ -167,7 +183,7 @@ class _SermonFormPageState extends ConsumerState<SermonFormPage> {
         title: _title.text,
         categoryId: _categoryId ?? '',
         passages: passages,
-        content: _content.text,
+        content: _content,
         photo: _photo,
         tags: tags,
         preachedAt: _preachedAt,
@@ -177,7 +193,7 @@ class _SermonFormPageState extends ConsumerState<SermonFormPage> {
         title: _title.text,
         categoryId: _categoryId,
         passages: passages,
-        content: _content.text,
+        content: _content,
         photo: _photo,
         clearPhoto: _photo == null,
         tags: tags,
@@ -339,16 +355,37 @@ class _SermonFormPageState extends ConsumerState<SermonFormPage> {
               ),
             ),
             const SizedBox(height: 24),
-            TextFormField(
-              controller: _content,
-              minLines: 8,
-              maxLines: null,
-              keyboardType: TextInputType.multiline,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: const InputDecoration(
-                labelText: 'Contenu du sermon',
-                alignLabelWithHint: true,
+            Text('Contenu du sermon', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 8),
+            InkWell(
+              onTap: _editContent,
+              borderRadius: BorderRadius.circular(4),
+              child: InputDecorator(
+                decoration: const InputDecoration(
+                  suffixIcon: Icon(Icons.edit_outlined),
+                ),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 96),
+                  child: Text(
+                    _contentPreview(),
+                    maxLines: 6,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: RichContent.isBlank(_content)
+                          ? theme.colorScheme.outline
+                          : null,
+                    ),
+                  ),
+                ),
               ),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: _editContent,
+              icon: const Icon(Icons.edit_note),
+              label: Text(RichContent.isBlank(_content)
+                  ? 'Écrire le contenu'
+                  : 'Modifier le contenu (mise en forme)'),
             ),
             const SizedBox(height: 24),
             Text('Textes bibliques', style: theme.textTheme.titleMedium),

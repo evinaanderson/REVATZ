@@ -9,6 +9,7 @@ import '../../domain/usecases/add_sermon.dart';
 import '../../domain/usecases/build_sermon_share.dart';
 import '../../domain/usecases/delete_sermon.dart';
 import '../../domain/usecases/get_sermons.dart';
+import '../../domain/services/rich_content.dart';
 import '../../domain/usecases/update_sermon.dart';
 
 /// Flux réactif : l'écran se met à jour tout seul après chaque modification.
@@ -30,7 +31,7 @@ final filteredSermonsProvider = Provider<AsyncValue<List<Sermon>>>((ref) {
         if (categoryId != null && s.categoryId != categoryId) return false;
         if (query.isEmpty) return true;
         return s.title.toLowerCase().contains(query) ||
-            s.content.toLowerCase().contains(query) ||
+            RichContent.toSearchText(s.content).toLowerCase().contains(query) ||
             s.tags.any((t) => t.toLowerCase().contains(query)) ||
             s.passages.any((p) =>
                 p.reference.toLowerCase().contains(query) ||

@@ -64,27 +64,6 @@ class ProfilePage extends ConsumerWidget {
                 label: const Text('Se connecter avec Google'),
               ),
             ],
-            const SizedBox(height: 32),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.lock_outline, color: theme.colorScheme.primary),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'Aucun mot de passe n\'est stocké dans l\'application : '
-                        'l\'authentification est gérée par Google. Vos sermons '
-                        'restent sur votre téléphone et dans votre propre Drive.',
-                        style: theme.textTheme.bodySmall,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
           ],
         ),
       ),

@@ -5,10 +5,13 @@ import '../../../../core/presentation/widgets/empty_state.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/format.dart';
 import '../../../category/presentation/state/category_providers.dart';
+import '../../domain/services/rich_content.dart';
 import '../state/sermon_providers.dart';
 import '../widgets/photo_thumbnail.dart' show showPhotoViewer;
+import '../widgets/rich_content_view.dart';
 import '../widgets/sermon_menu_actions.dart';
 import '../widgets/sermon_photo.dart';
+import 'sermon_reader_page.dart';
 
 class SermonDetailPage extends ConsumerWidget {
   final String sermonId;
@@ -36,6 +39,15 @@ class SermonDetailPage extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Sermon'),
         actions: [
+          IconButton(
+            tooltip: 'Mode lecture',
+            icon: const Icon(Icons.chrome_reader_mode_outlined),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => SermonReaderPage(sermonId: sermonId)),
+            ),
+          ),
           IconButton(
             tooltip: 'Partager',
             icon: const Icon(Icons.share_outlined),
@@ -86,9 +98,9 @@ class SermonDetailPage extends ConsumerWidget {
                     style: theme.textTheme.bodyMedium),
             ],
           ),
-          if (sermon.content.isNotEmpty) ...[
+          if (!RichContent.isBlank(sermon.content)) ...[
             const SizedBox(height: 16),
-            SelectableText(sermon.content, style: theme.textTheme.bodyLarge),
+            RichContentView(content: sermon.content),
           ],
           if (sermon.passages.isNotEmpty) ...[
             const SizedBox(height: 20),

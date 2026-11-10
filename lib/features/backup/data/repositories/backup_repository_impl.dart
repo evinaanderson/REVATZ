@@ -6,6 +6,7 @@ import '../../../sermon/domain/entities/sermon.dart';
 import '../../domain/entities/backup_data.dart';
 import '../../domain/entities/backup_info.dart';
 import '../../domain/entities/local_backup_file.dart';
+import '../../domain/entities/storage_location.dart';
 import '../../domain/repositories/backup_repository.dart';
 import '../datasources/backup_archive_service.dart';
 import '../datasources/backup_prefs_datasource.dart';
@@ -60,6 +61,20 @@ class BackupRepositoryImpl implements BackupRepository {
       final bytes = await _archive.buildExportBytes(data);
       final path = await _local.save('Export_${_local.stamp()}.zip', bytes);
       return Success(path);
+    } catch (e) {
+      return Err(mapBackupError(e));
+    }
+  }
+
+  @override
+  Future<Result<StorageLocation>> getStorageLocation({
+    bool requestAccess = false,
+  }) async {
+    try {
+      return Success(await _local.location(
+        requestAccess: requestAccess,
+        openSettings: requestAccess,
+      ));
     } catch (e) {
       return Err(mapBackupError(e));
     }

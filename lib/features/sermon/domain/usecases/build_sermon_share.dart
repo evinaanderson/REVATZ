@@ -1,4 +1,5 @@
 import '../entities/sermon.dart';
+import '../services/rich_content.dart';
 
 /// Contenu prêt à partager (style « annonce WhatsApp »).
 class SermonShareContent {
@@ -9,19 +10,20 @@ class SermonShareContent {
 
 /// Construit le message de partage d'un sermon :
 ///  - le titre en gras au début ;
-///  - le contenu ;
+///  - le contenu, avec sa mise en forme convertie au format WhatsApp
+///    (gras, italique, barré, titres en gras, listes) ;
 ///  - tout au fond, les textes bibliques : référence en gras,
 ///    verset en italique entre guillemets ;
 ///  - la photo de référence (une seule) si elle existe.
 ///
-/// Syntaxe WhatsApp : *gras* et _italique_.
+/// Syntaxe WhatsApp : *gras*, _italique_, ~barré~.
 class BuildSermonShare {
   const BuildSermonShare();
 
   SermonShareContent call(Sermon sermon) {
     final b = StringBuffer()..writeln(_bold(sermon.title));
 
-    final content = sermon.content.trim();
+    final content = RichContent.toWhatsApp(sermon.content);
     if (content.isNotEmpty) {
       b
         ..writeln()

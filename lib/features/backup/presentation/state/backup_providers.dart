@@ -6,6 +6,7 @@ import '../../../../injection_container.dart';
 import '../../domain/entities/backup_data.dart';
 import '../../domain/entities/backup_info.dart';
 import '../../domain/entities/local_backup_file.dart';
+import '../../domain/entities/storage_location.dart';
 import '../../domain/usecases/backup_usecases.dart';
 
 /// État de la sauvegarde Google Drive.
@@ -22,9 +23,10 @@ class BackupActions {
   final ExportToZip _export;
   final BackupToDrive _backupDrive;
   final RestoreFromDrive _restoreDrive;
+  final GetStorageLocation _location;
 
   BackupActions(this._saveLocal, this._restoreLocal, this._listLocal,
-      this._export, this._backupDrive, this._restoreDrive);
+      this._export, this._backupDrive, this._restoreDrive, this._location);
 
   // Local
   Future<Result<String>> saveLocal() => _saveLocal(const NoParams());
@@ -32,10 +34,14 @@ class BackupActions {
   Future<Result<List<LocalBackupFile>>> listLocal() => _listLocal(const NoParams());
   Future<Result<String>> exportZip() => _export(const NoParams());
 
+  /// Dossier utilisé ; [requestAccess] demande l'autorisation d'accès aux fichiers.
+  Future<Result<StorageLocation>> storageLocation({bool requestAccess = false}) =>
+      _location(requestAccess);
+
   // Google Drive
   Future<Result<BackupInfo>> backupToDrive() => _backupDrive(const NoParams());
   Future<Result<BackupData>> restoreFromDrive() => _restoreDrive(const NoParams());
 }
 
 final backupActionsProvider = Provider<BackupActions>(
-    (ref) => BackupActions(sl(), sl(), sl(), sl(), sl(), sl()));
+    (ref) => BackupActions(sl(), sl(), sl(), sl(), sl(), sl(), sl()));

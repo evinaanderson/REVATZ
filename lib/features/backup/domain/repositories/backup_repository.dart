@@ -2,6 +2,7 @@ import '../../../../core/result/result.dart';
 import '../entities/backup_data.dart';
 import '../entities/backup_info.dart';
 import '../entities/local_backup_file.dart';
+import '../entities/storage_location.dart';
 
 abstract class BackupRepository {
   // ----- Local (dossier REVATZ) -----
@@ -17,6 +18,11 @@ abstract class BackupRepository {
 
   /// ZIP lisible : un dossier par catégorie + sermon.json (pour la restauration).
   Future<Result<String>> exportToZip(BackupData data);
+
+  /// Dossier utilisé pour les sauvegardes locales
+  /// (0/REVATZ, 0/Download/REVATZ, ou dossier privé en repli).
+  /// [requestAccess] : demande l'autorisation « Accès à tous les fichiers ».
+  Future<Result<StorageLocation>> getStorageLocation({bool requestAccess = false});
 
   // ----- Google Drive -----
   Future<Result<BackupInfo>> backupToDrive(BackupData data);

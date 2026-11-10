@@ -7,9 +7,17 @@ import 'package:share_plus/share_plus.dart';
 import '../../../../core/presentation/widgets/dialogs.dart';
 import '../../domain/entities/sermon.dart';
 import '../pages/sermon_form_page.dart';
+import '../pages/sermon_reader_page.dart';
 import '../state/sermon_providers.dart';
 
-enum SermonMenuAction { edit, share, delete }
+enum SermonMenuAction { read, edit, share, delete }
+
+/// Ouvre le mode lecture (zoom, thèmes de lecture, écran allumé).
+Future<void> openSermonReader(BuildContext context, String sermonId) =>
+    Navigator.push<void>(
+      context,
+      MaterialPageRoute(builder: (_) => SermonReaderPage(sermonId: sermonId)),
+    );
 
 Future<void> openSermonEditor(BuildContext context, String sermonId) =>
     Navigator.push<void>(
@@ -78,6 +86,8 @@ class SermonMenuButton extends ConsumerWidget {
       icon: const Icon(Icons.more_vert),
       onSelected: (action) {
         switch (action) {
+          case SermonMenuAction.read:
+            openSermonReader(context, sermon.id);
           case SermonMenuAction.edit:
             openSermonEditor(context, sermon.id);
           case SermonMenuAction.share:
@@ -87,6 +97,14 @@ class SermonMenuButton extends ConsumerWidget {
         }
       },
       itemBuilder: (_) => const [
+        PopupMenuItem(
+          value: SermonMenuAction.read,
+          child: Row(children: [
+            Icon(Icons.chrome_reader_mode_outlined),
+            SizedBox(width: 12),
+            Text('Mode lecture'),
+          ]),
+        ),
         PopupMenuItem(
           value: SermonMenuAction.edit,
           child: Row(children: [

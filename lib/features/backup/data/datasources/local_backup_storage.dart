@@ -5,16 +5,29 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../domain/entities/local_backup_file.dart';
+import '../../domain/entities/storage_location.dart';
 
-/// Gère le dossier de sauvegarde « REVATZ ».
+/// Dossier de sauvegarde « REVATZ ».
 ///
-/// Emplacement visé (Android) : /storage/emulated/0/REVATZ  (= « 0/REVATZ »).
-/// Il nécessite l'autorisation « Accès à tous les fichiers » (Android 11+)
-/// ou « Stockage » (Android 10 et moins). Si elle est refusée, on bascule
-/// automatiquement sur le dossier propre à l'application.
+/// Ordre de préférence (le premier dossier où l'écriture réussit) :
+///   1. 0/REVATZ/                 (/storage/emulated/0/REVATZ)
+///   2. 0/Download/REVATZ/        (/storage/emulated/0/Download/REVATZ)
+///   3. dossier privé de l'application (Android/data/<package>/files/REVATZ)
+///      = repli uniquement, signalé à l'utilisateur.
+///
+/// Les dossiers 1 et 2 demandent l'autorisation « Accès à tous les fichiers »
+/// (Android 11 et plus) ou « Stockage » (Android 10 et moins).
 class LocalBackupStorage {
   static const folderName = 'REVATZ';
-  static const _androidRoot = '/storage/emulated/0';
+  static const _root = '/storage/emulated/0';
+
+  /// Dossiers publics, par ordre de préférence.
+  static const _publicFolders = <String>[
+    '$_root/$folderName',
+    '$_root/Download/$folderName',
+  ];
+
+  bool _askedThisSession = false;
 
   /// yyyyMMdd_HHmmss
   String stamp([DateTime? now]) {
@@ -23,59 +36,107 @@ class LocalBackupStorage {
     return '${d.year}${t(d.month)}${t(d.day)}_${t(d.hour)}${t(d.minute)}${t(d.second)}';
   }
 
-  Future<Directory> directory() async {
+  /// Dossier utilisé pour écrire.
+  ///
+  /// [requestAccess] : si aucun dossier public n'est accessible, demande
+  /// l'autorisation. [openSettings] : si elle est toujours refusée, ouvre les
+  /// réglages de l'application (bouton « Autoriser l'accès »).
+  Future<StorageLocation> location({
+    bool requestAccess = false,
+    bool openSettings = false,
+  }) async {
     if (Platform.isAndroid) {
-      if (await _hasStorageAccess()) {
-        final shared = Directory(p.join(_androidRoot, folderName));
-        if (await _isWritable(shared)) return shared;
+      var dir = await _firstWritablePublic();
+      if (dir == null && requestAccess) {
+        await _requestPermissions();
+        dir = await _firstWritablePublic();
+        if (dir == null && openSettings) {
+          try {
+            await openAppSettings();
+          } catch (_) {}
+        }
       }
-      // Repli : Android/data/<package>/files/REVATZ
-      final ext = await getExternalStorageDirectory();
-      if (ext != null) {
-        final appDir = Directory(p.join(ext.path, folderName));
-        if (await _isWritable(appDir)) return appDir;
-      }
+      if (dir != null) return StorageLocation(path: dir.path, isPublic: true);
     }
-    final docs = await getApplicationDocumentsDirectory();
-    final dir = Directory(p.join(docs.path, folderName));
-    await dir.create(recursive: true);
-    return dir;
+    final priv = await _privateDirectory();
+    return StorageLocation(path: priv.path, isPublic: false);
+  }
+
+  /// Écriture : demande l'autorisation une seule fois par session.
+  Future<Directory> _writeDirectory() async {
+    final ask = !_askedThisSession;
+    _askedThisSession = true;
+    final loc = await location(requestAccess: ask);
+    return Directory(loc.path);
   }
 
   Future<String> save(String fileName, List<int> bytes) async {
-    final dir = await directory();
+    final dir = await _writeDirectory();
     final file = File(p.join(dir.path, fileName));
     await file.writeAsBytes(bytes, flush: true);
     return file.path;
   }
 
+  /// Liste les ZIP de TOUS les dossiers connus (0/REVATZ, 0/Download/REVATZ et
+  /// dossier privé) : les anciennes sauvegardes restent donc visibles.
   Future<List<LocalBackupFile>> list() async {
-    final dir = await directory();
-    final files = <LocalBackupFile>[];
-    await for (final e in dir.list()) {
-      if (e is File && p.extension(e.path).toLowerCase() == '.zip') {
-        final stat = await e.stat();
-        files.add(LocalBackupFile(
-          path: e.path,
-          name: p.basename(e.path),
-          sizeBytes: stat.size,
-          modifiedAt: stat.modified,
-        ));
+    await _writeDirectory(); // peut déclencher la demande d'autorisation
+    final folders = <String>{
+      if (Platform.isAndroid) ..._publicFolders,
+      (await _privateDirectory()).path,
+    };
+
+    final byPath = <String, LocalBackupFile>{};
+    for (final path in folders) {
+      try {
+        final dir = Directory(path);
+        if (!await dir.exists()) continue;
+        await for (final e in dir.list()) {
+          if (e is File && p.extension(e.path).toLowerCase() == '.zip') {
+            final stat = await e.stat();
+            byPath[e.path] = LocalBackupFile(
+              path: e.path,
+              name: p.basename(e.path),
+              sizeBytes: stat.size,
+              modifiedAt: stat.modified,
+            );
+          }
+        }
+      } catch (_) {
+        // dossier illisible (autorisation manquante) : on l'ignore
       }
     }
-    files.sort((a, b) => b.modifiedAt.compareTo(a.modifiedAt));
+    final files = byPath.values.toList()
+      ..sort((a, b) => b.modifiedAt.compareTo(a.modifiedAt));
     return files;
   }
 
-  Future<bool> _hasStorageAccess() async {
-    try {
-      if (await Permission.manageExternalStorage.isGranted) return true;
-      if (await Permission.storage.isGranted) return true;
-      if (await Permission.manageExternalStorage.request().isGranted) return true;
-      return await Permission.storage.request().isGranted;
-    } catch (_) {
-      return false;
+  // ------------------------------------------------------------ Internes
+  Future<Directory?> _firstWritablePublic() async {
+    for (final path in _publicFolders) {
+      final dir = Directory(path);
+      if (await _isWritable(dir)) return dir;
     }
+    return null;
+  }
+
+  Future<void> _requestPermissions() async {
+    try {
+      // Android 11 et plus : « Accès à tous les fichiers »
+      await Permission.manageExternalStorage.request();
+      if (await _firstWritablePublic() != null) return;
+      // Android 10 et moins : « Stockage »
+      await Permission.storage.request();
+    } catch (_) {}
+  }
+
+  Future<Directory> _privateDirectory() async {
+    Directory? base;
+    if (Platform.isAndroid) base = await getExternalStorageDirectory();
+    base ??= await getApplicationDocumentsDirectory();
+    final dir = Directory(p.join(base.path, folderName));
+    await dir.create(recursive: true);
+    return dir;
   }
 
   Future<bool> _isWritable(Directory dir) async {

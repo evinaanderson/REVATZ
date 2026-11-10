@@ -6,6 +6,7 @@ import '../../../sermon/domain/repositories/sermon_repository.dart';
 import '../entities/backup_data.dart';
 import '../entities/backup_info.dart';
 import '../entities/local_backup_file.dart';
+import '../entities/storage_location.dart';
 import '../repositories/backup_repository.dart';
 
 /// Rassemble les données locales (sauvegarde, export, partage).
@@ -137,4 +138,15 @@ class GetBackupInfo implements UseCase<BackupInfo, NoParams> {
 
   @override
   Future<Result<BackupInfo>> call(NoParams params) => _backup.getBackupInfo();
+}
+
+/// Dossier de sauvegarde en cours d'utilisation.
+/// Paramètre : true = demander l'autorisation d'accès aux fichiers.
+class GetStorageLocation implements UseCase<StorageLocation, bool> {
+  final BackupRepository _backup;
+  GetStorageLocation(this._backup);
+
+  @override
+  Future<Result<StorageLocation>> call(bool requestAccess) =>
+      _backup.getStorageLocation(requestAccess: requestAccess);
 }
